@@ -78,7 +78,7 @@ def run():
     scan_count   = 0
     last_cleanup = time.time()
 
-    logger.info(f"Сканирую каждые {SCAN_INTERVAL_SECONDS}с. Нажми Ctrl+C для остановки.")
+    logger.info(f"Сканирую каждые {SCAN_INTERVAL_SECONDS}с. Завершить: Ctrl+C")
 
     while not _shutdown.is_set():
         loop_start = time.time()

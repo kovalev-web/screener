@@ -32,11 +32,11 @@ logging.basicConfig(
 logger = logging.getLogger("daily_scan")
 
 # ── Настройки ──────────────────────────────────────────────────────
-MIN_VOLUME_24H    = 10_000_000  # минимум $10M оборота за сутки
-DAILY_RVOL_MIN    = 1.3         # объём сегодня в 1.3x+ раза выше нормы (главный сигнал)
-MIN_CHANGE_PCT    = 7.0         # текущий рост ≥ +7% от открытия дня
-MAX_REVERSAL_PCT  = 65.0        # цена не ниже 65% от дневного хая
-HISTORY_DAYS      = 8           # 1 текущий + 7 для базелайна
+MIN_VOLUME_24H    = 5_000_000   # минимум $5M оборота за сутки
+DAILY_RVOL_MIN    = 1.2         # объём сегодня в 1.2x+ раза выше нормы
+MIN_CHANGE_PCT    = 5.0         # текущий рост ≥ +5% от открытия дня
+MAX_REVERSAL_PCT  = 60.0        # цена не ниже 60% от дневного хая
+HISTORY_DAYS      = 14          # 14 дней для базелайна
 TOP_N             = 6           # сколько монет показывать
 
 
@@ -101,40 +101,7 @@ def calc_metrics(client: BinanceClient, symbol: str, ticker: Dict) -> Optional[D
         "score": daily_rvol,
         "passes_rvol": passes_rvol,
         "passes_change": passes_change,
-    }
-
-    # Фильтр качества: цена не ниже 65% от дневного хая (убирает быстрые вики)
-    reversal_pct = (price / high_price * 100) if high_price > 0 else 100
-    if reversal_pct < MAX_REVERSAL_PCT:
-        return None
-
-    # Два критерия — достаточно одного:
-    # 1. Объём аномальный (RVOL) — неважно куда цена, это главный сигнал
-    # 2. Цена стабильно растёт от открытия дня
-    passes_rvol   = daily_rvol >= DAILY_RVOL_MIN
-    passes_change = change_pct >= MIN_CHANGE_PCT
-
-    if not passes_rvol and not passes_change:
-        return None
-
-    # Скор: только по RVOL — монета с большим объёмом всегда выше
-    score = daily_rvol
-
-    return {
-        "symbol":        symbol,
-        "daily_rvol":    daily_rvol,
-        "vol_today":     today_vol,
-        "vol_avg7d":     avg_vol,
-        "price":         price,
-        "open_price":    open_price,
-        "high_price":    high_price,
-        "change_pct":    change_pct,
-        "reversal_pct":  reversal_pct,
-        "score":         score,
-        "passes_rvol":   passes_rvol,
-        "passes_change": passes_change,
-    }
-
+}
 
 def run_scan(client: BinanceClient, progress_callback=None) -> List[Dict]:
     logger.info("Получаем список фьючерсных пар...")
