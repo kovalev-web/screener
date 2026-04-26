@@ -62,8 +62,8 @@ def calc_metrics(client: BinanceClient, symbol: str, ticker: Dict) -> Optional[D
     if not klines or len(klines) < HISTORY_DAYS:
         return None
 
-    # Последние 7 закрытых свечей — базелайн
-    history = klines[:HISTORY_DAYS]
+    # Последние 14 закрытых свечей, пропускаем вчерашний день (мог быть spiking day)
+    history = klines[1:HISTORY_DAYS]
     history_vols = [float(k[7]) for k in history]
     avg_vol = sum(history_vols) / len(history_vols)
 
