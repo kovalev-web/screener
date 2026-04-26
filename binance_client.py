@@ -8,6 +8,7 @@ Rate limits Binance Futures:
   - Лимит: 2400 weight/min
 """
 
+import os
 import time
 import logging
 from typing import Optional, List, Dict, Any
@@ -19,6 +20,8 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 FUTURES_BASE_URL = "https://fapi.binance.com"
+
+PROXY = os.getenv("PROXY") or os.getenv("HTTPS_PROXY")
 
 
 class BinanceClient:
@@ -58,8 +61,13 @@ class BinanceClient:
     def _get(self, endpoint: str, params: Dict = None, weight: int = 1) -> Optional[Any]:
         self._check_rate_limit(weight)
         url = f"{self.base_url}{endpoint}"
+        
+        kwargs = {"params": params, "timeout": 10}
+        if PROXY:
+            kwargs["proxies"] = {"https": PROXY, "http": PROXY}
+        
         try:
-            resp = self.session.get(url, params=params, timeout=10)
+            resp = self.session.get(url, **kwargs)
 
             # Futures используют X-MBX-USED-WEIGHT-1M
             used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
