@@ -1,11 +1,11 @@
 """
-Binance REST API client.
+Binance USDT-M Futures REST API client.
 
 Использует только публичные endpoints — API-ключ не нужен.
-Rate limits Binance:
-  - GET /api/v3/ticker/24hr  →  weight 40 (все символы)
-  - GET /api/v3/klines        →  weight 2 за запрос
-  - Лимит: 1200 weight/min
+Rate limits Binance Futures:
+  - GET /fapi/v1/ticker/24hr  →  weight 40 (все символы)
+  - GET /fapi/v1/klines        →  weight 5 за запрос
+  - Лимит: 2400 weight/min
 """
 
 import time
@@ -16,17 +16,17 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from config import BINANCE_BASE_URL
-
 logger = logging.getLogger(__name__)
+
+FUTURES_BASE_URL = "https://fapi.binance.com"
 
 
 class BinanceClient:
     def __init__(self):
-        self.base_url = BINANCE_BASE_URL
+        self.base_url = FUTURES_BASE_URL
         self._used_weight   = 0
-        self._weight_reset  = time.time() + 60  # скользящее окно
-        self._max_weight    = 1100               # оставляем запас
+        self._weight_reset  = time.time() + 60
+        self._max_weight    = 2000  # запас от лимита 2400
 
         # HTTP-сессия с автоматическим retry
         retry = Retry(
@@ -61,7 +61,7 @@ class BinanceClient:
         try:
             resp = self.session.get(url, params=params, timeout=10)
 
-            # Обновляем счётчик по заголовку биржи
+            # Futures используют X-MBX-USED-WEIGHT-1M
             used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
             if used:
                 self._used_weight = int(used)
@@ -92,32 +92,32 @@ class BinanceClient:
 
     def get_all_tickers(self) -> List[Dict]:
         """
-        GET /api/v3/ticker/24hr
-        Возвращает 24ч статистику по всем торговым парам.
+        GET /fapi/v1/ticker/24hr
+        Возвращает 24ч статистику по всем USDT-M Futures парам.
         Weight: 40
         """
-        data = self._get("/api/v3/ticker/24hr", weight=40)
+        data = self._get("/fapi/v1/ticker/24hr", weight=40)
         return data if isinstance(data, list) else []
 
     def get_klines(
         self,
         symbol: str,
-        interval: str = "1h",
-        limit: int = 20,
+        interval: str = "1m",
+        limit: int = 100,
     ) -> List[List]:
         """
-        GET /api/v3/klines
+        GET /fapi/v1/klines
         Формат свечи: [open_time, open, high, low, close, volume,
                         close_time, quote_volume, trades, ...]
-        Weight: 2
+        Weight: 5
         """
         params = {"symbol": symbol, "interval": interval, "limit": limit}
-        data = self._get("/api/v3/klines", params=params, weight=2)
+        data = self._get("/fapi/v1/klines", params=params, weight=5)
         return data if isinstance(data, list) else []
 
     def get_price(self, symbol: str) -> Optional[float]:
-        """GET /api/v3/ticker/price — текущая цена. Weight: 2"""
-        data = self._get("/api/v3/ticker/price", params={"symbol": symbol}, weight=2)
+        """GET /fapi/v1/ticker/price — текущая цена. Weight: 5"""
+        data = self._get("/fapi/v1/ticker/price", params={"symbol": symbol}, weight=5)
         if data and "price" in data:
             return float(data["price"])
         return None

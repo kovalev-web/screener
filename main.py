@@ -70,15 +70,13 @@ def run():
     coin_count  = sum(1 for t in all_tickers if screener._is_valid_altcoin(t))
     logger.info(f"Монет для мониторинга: {coin_count}")
 
-    # Стартовый тест Telegram
-    logger.info("Проверяем Telegram...")
-    screener.notifier.test_connection()
+    # Запускаем Telegram-бот с кнопкой ручного скрининга
+    from bot import TelegramBot
+    tg_bot = TelegramBot()
+    tg_bot.start()
 
     scan_count   = 0
     last_cleanup = time.time()
-
-    # Сообщаем в Telegram о запуске
-    screener.notifier.send_startup(coin_count)
 
     logger.info(f"Сканирую каждые {SCAN_INTERVAL_SECONDS}с. Нажми Ctrl+C для остановки.")
 

@@ -8,3 +8,4 @@ venv/
 *.db-wal
 *.log
 .env
+.DS_Store

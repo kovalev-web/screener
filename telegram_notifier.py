@@ -77,9 +77,9 @@ class TelegramNotifier:
         filled = round(score / 10)
         bar    = "█" * filled + "░" * (10 - filled)
 
-        # Ссылки — 1m для входа, 5m для контекста
-        tv_1m = f"https://www.tradingview.com/chart/?symbol=BINANCE:{base}USDT&interval=1"
-        tv_5m = f"https://www.tradingview.com/chart/?symbol=BINANCE:{base}USDT&interval=5"
+        # Ссылки на фьючерсный график — 1m для входа, 5m для контекста
+        tv_1m = f"https://www.tradingview.com/chart/?symbol=BINANCE:{base}USDTPERP&interval=1"
+        tv_5m = f"https://www.tradingview.com/chart/?symbol=BINANCE:{base}USDTPERP&interval=5"
 
         if price >= 1:         price_str = f"${price:.4f}"
         elif price >= 0.001:   price_str = f"${price:.6f}"

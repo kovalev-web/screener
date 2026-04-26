@@ -8,7 +8,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── Binance ───────────────────────────────────────────────
-BINANCE_BASE_URL = "https://api.binance.com"
+# USDT-M Futures (Perpetual) — fapi.binance.com
+BINANCE_BASE_URL = "https://fapi.binance.com"
 
 # ── Интервалы сканирования ────────────────────────────────
 SCAN_INTERVAL_SECONDS = 60   # Сканировать каждые 60 секунд
@@ -38,7 +39,7 @@ MIN_PRICE_USDT            = 0.000001
 
 # ── Алерты ────────────────────────────────────────────────
 MIN_SCORE_TO_ALERT     = 50   # Порог алерта
-ALERT_COOLDOWN_MINUTES = 30   # Не повторять алерт 30 минут (скальпинг быстрый)
+ALERT_COOLDOWN_MINUTES = 360  # Не повторять алерт по одной монете 6 часов
 
 # ── RSI ───────────────────────────────────────────────────
 RSI_PERIOD = 14
