@@ -32,11 +32,11 @@ logging.basicConfig(
 logger = logging.getLogger("daily_scan")
 
 # ── Настройки ──────────────────────────────────────────────────────
-MIN_VOLUME_24H    = 5_000_000   # минимум $5M оборота за сутки
-DAILY_RVOL_MIN    = 1.2         # объём сегодня в 1.2x+ раза выше нормы
+MIN_VOLUME_24H    = 10_000_000  # минимум $10M оборота за сутки
+DAILY_RVOL_MIN    = 1.2         # объём сегодня в 1.2x+ раза выше нормы (главный сигнал)
 MIN_CHANGE_PCT    = 5.0         # текущий рост ≥ +5% от открытия дня
-MAX_REVERSAL_PCT  = 60.0        # цена не ниже 60% от дневного хая
-HISTORY_DAYS      = 14          # 14 дней для базелайна
+MAX_REVERSAL_PCT  = 65.0        # цена не ниже 65% от дневного хая
+HISTORY_DAYS      = 17          # нужно 17 чтобы после пропуска 2 дней осталось 15 для базелайна
 TOP_N             = 6           # сколько монет показывать
 
 
@@ -57,51 +57,64 @@ def is_valid(ticker: Dict) -> bool:
 
 
 def calc_metrics(client: BinanceClient, symbol: str, ticker: Dict) -> Optional[Dict]:
-    # Используем 7 закрытых свечей для базелайна (не текущую неполную)
-    klines = client.get_klines(symbol, interval="1d", limit=HISTORY_DAYS + 1)
-    if not klines or len(klines) < HISTORY_DAYS:
+    klines = client.get_klines(symbol, interval="1d", limit=HISTORY_DAYS)
+    if not klines or len(klines) < 4:
         return None
 
-    # Последние 14 закрытых свечей, пропускаем вчерашний день (мог быть spiking day)
-    history = klines[1:HISTORY_DAYS]
-    history_vols = [float(k[7]) for k in history]
-    avg_vol = sum(history_vols) / len(history_vols)
+    today        = klines[-1]   # текущий день (неполный)
+    # Пропускаем сегодня И вчера из базелайна:
+    # если вчера был большой день (pump), он не должен раздувать среднее.
+    # Rolling 24h из тикера включает вчера → сравниваем с нормой до вчера.
+    baseline     = klines[:-2]  # дни от -17 до -2 (не включая вчера и сегодня)
+    history_vols = [float(k[7]) for k in baseline]
+    avg_vol      = sum(history_vols) / len(history_vols) if history_vols else 0
 
-    # Скользящий 24h объём из тикера (всегда полные сутки)
-    today_vol = float(ticker.get("quoteVolume", 0))
+    # Rolling 24h из тикера — всегда полные 24ч, не зависит от времени суток
+    today_vol  = float(ticker.get("quoteVolume", 0))
     daily_rvol = today_vol / avg_vol if avg_vol > 0 else 0
 
-    # Цена и изменение — из тикера (скользящие 24ч)
-    price = float(ticker.get("lastPrice", 0))
-    price_change_pct = float(ticker.get("priceChangePercent", 0))
+    # Берём open/high из дневной свечи (от полуночи UTC) — точнее чем тикер
+    # Тикер считает скользящие 24ч и может показывать -1% на монете которая
+    # выросла сегодня с 4.7 до 5.5 (если 24ч назад была уже 5.4)
+    price      = float(ticker.get("lastPrice", today[4]))
+    open_price = float(today[1])   # открытие дневной свечи (полночь UTC)
+    high_price = float(today[2])   # хай дневной свечи
 
-    # Фильтр качества: цена не ниже 65% от дневного хая
-    high_price = float(ticker.get("highPrice", price))
+    # change_pct считаем от открытия дневной свечи, не от тикера
+    change_pct = ((price / open_price) - 1) * 100 if open_price > 0 else 0
+
+    # Фильтр качества: цена не ниже 65% от дневного хая (убирает быстрые вики)
     reversal_pct = (price / high_price * 100) if high_price > 0 else 100
     if reversal_pct < MAX_REVERSAL_PCT:
         return None
 
     # Два критерия — достаточно одного:
-    passes_rvol = daily_rvol >= DAILY_RVOL_MIN
-    passes_change = price_change_pct >= MIN_CHANGE_PCT
+    # 1. Объём аномальный (RVOL) — неважно куда цена, это главный сигнал
+    # 2. Цена стабильно растёт от открытия дня
+    passes_rvol   = daily_rvol >= DAILY_RVOL_MIN
+    passes_change = change_pct >= MIN_CHANGE_PCT
 
     if not passes_rvol and not passes_change:
         return None
 
+    # Скор: только по RVOL — монета с большим объёмом всегда выше
+    score = daily_rvol
+
     return {
-        "symbol": symbol,
-        "daily_rvol": daily_rvol,
-        "vol_today": today_vol,
-        "vol_avg7d": avg_vol,
-        "price": price,
-        "open_price": price / (1 + price_change_pct / 100) if price_change_pct != 0 else price,
-        "high_price": high_price,
-        "change_pct": price_change_pct,
-        "reversal_pct": reversal_pct,
-        "score": daily_rvol,
-        "passes_rvol": passes_rvol,
+        "symbol":        symbol,
+        "daily_rvol":    daily_rvol,
+        "vol_today":     today_vol,
+        "vol_avg7d":     avg_vol,
+        "price":         price,
+        "open_price":    open_price,
+        "high_price":    high_price,
+        "change_pct":    change_pct,
+        "reversal_pct":  reversal_pct,
+        "score":         score,
+        "passes_rvol":   passes_rvol,
         "passes_change": passes_change,
-}
+    }
+
 
 def run_scan(client: BinanceClient, progress_callback=None) -> List[Dict]:
     logger.info("Получаем список фьючерсных пар...")

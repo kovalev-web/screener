@@ -78,7 +78,7 @@ def run():
     scan_count   = 0
     last_cleanup = time.time()
 
-    logger.info(f"Сканирую каждые {SCAN_INTERVAL_SECONDS}с. Завершить: Ctrl+C")
+    logger.info(f"Сканирую каждые {SCAN_INTERVAL_SECONDS}с. Нажми Ctrl+C для остановки.")
 
     while not _shutdown.is_set():
         loop_start = time.time()
@@ -110,9 +110,7 @@ def run():
         logger.debug(f"Скан занял {elapsed:.1f}с, спим {sleep_for:.1f}с")
         _shutdown.wait(timeout=sleep_for)
 
-    # Завершение
     logger.info("Скринер остановлен.")
-    screener.notifier.send_status("⛔ Inplay скринер остановлен.")
 
 
 # ── Тестовые режимы ────────────────────────────────────────────────
