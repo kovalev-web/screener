@@ -57,26 +57,51 @@ def is_valid(ticker: Dict) -> bool:
 
 
 def calc_metrics(client: BinanceClient, symbol: str, ticker: Dict) -> Optional[Dict]:
-    klines = client.get_klines(symbol, interval="1d", limit=HISTORY_DAYS)
-    if not klines or len(klines) < 4:
+    # Используем 7 закрытых свечей для базелайна (не текущую неполную)
+    klines = client.get_klines(symbol, interval="1d", limit=HISTORY_DAYS + 1)
+    if not klines or len(klines) < HISTORY_DAYS:
         return None
 
-    history      = klines[:-1]
-    today        = klines[-1]
+    # Последние 7 закрытых свечей — базелайн
+    history = klines[:HISTORY_DAYS]
     history_vols = [float(k[7]) for k in history]
-    today_vol    = float(today[7])
-    avg_vol      = sum(history_vols) / len(history_vols) if history_vols else 0
-    daily_rvol   = today_vol / avg_vol if avg_vol > 0 else 0
+    avg_vol = sum(history_vols) / len(history_vols)
 
-    # Берём open/high из дневной свечи (от полуночи UTC) — точнее чем тикер
-    # Тикер считает скользящие 24ч и может показывать -1% на монете которая
-    # выросла сегодня с 4.7 до 5.5 (если 24ч назад была уже 5.4)
-    price      = float(ticker.get("lastPrice", today[4]))
-    open_price = float(today[1])   # открытие дневной свечи (полночь UTC)
-    high_price = float(today[2])   # хай дневной свечи
+    # Скользящий 24h объём из тикера (всегда полные сутки)
+    today_vol = float(ticker.get("quoteVolume", 0))
+    daily_rvol = today_vol / avg_vol if avg_vol > 0 else 0
 
-    # change_pct считаем от открытия дневной свечи, не от тикера
-    change_pct = ((price / open_price) - 1) * 100 if open_price > 0 else 0
+    # Цена и изменение — из тикера (скользящие 24ч)
+    price = float(ticker.get("lastPrice", 0))
+    price_change_pct = float(ticker.get("priceChangePercent", 0))
+
+    # Фильтр качества: цена не ниже 65% от дневного хая
+    high_price = float(ticker.get("highPrice", price))
+    reversal_pct = (price / high_price * 100) if high_price > 0 else 100
+    if reversal_pct < MAX_REVERSAL_PCT:
+        return None
+
+    # Два критерия — достаточно одного:
+    passes_rvol = daily_rvol >= DAILY_RVOL_MIN
+    passes_change = price_change_pct >= MIN_CHANGE_PCT
+
+    if not passes_rvol and not passes_change:
+        return None
+
+    return {
+        "symbol": symbol,
+        "daily_rvol": daily_rvol,
+        "vol_today": today_vol,
+        "vol_avg7d": avg_vol,
+        "price": price,
+        "open_price": price / (1 + price_change_pct / 100) if price_change_pct != 0 else price,
+        "high_price": high_price,
+        "change_pct": price_change_pct,
+        "reversal_pct": reversal_pct,
+        "score": daily_rvol,
+        "passes_rvol": passes_rvol,
+        "passes_change": passes_change,
+    }
 
     # Фильтр качества: цена не ниже 65% от дневного хая (убирает быстрые вики)
     reversal_pct = (price / high_price * 100) if high_price > 0 else 100
