@@ -38,9 +38,12 @@ class BinanceClient:
             status_forcelist={429, 500, 502, 503, 504},
         )
         adapter = HTTPAdapter(max_retries=retry)
-        self.session = requests.Session()
-        self.session.mount("https://", adapter)
-        self.session.headers.update({"Accept": "application/json"})
+self.session = requests.Session()
+        self.session.mount("https", adapter)
+        self.session.headers.update({
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        })
 
     # ── внутренние методы ──────────────────────────────────────────
 
