@@ -3,6 +3,7 @@ Vercel serverless API — endpoint для ручного запуска INPLAY-�
 """
 
 import sys
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,8 +13,9 @@ from binance_client import BinanceClient
 from telegram_notifier import TelegramNotifier
 
 
-def handler(req, context):
-    if req.method == "POST":
+class handler(BaseHTTPRequestHandler):
+
+    def do_POST(self):
         try:
             client = BinanceClient()
             top = run_scan(client)
@@ -22,8 +24,18 @@ def handler(req, context):
             notifier = TelegramNotifier()
             notifier._send(message)
 
-            return {"statusCode": 200, "body": '{"status": "ok"}'}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write('{"status": "ok"}'.encode("utf-8"))
         except Exception as e:
-            return {"statusCode": 500, "body": '{"status": "error"}'}
-    else:
-        return {"statusCode": 405, "body": '{"status": "method not allowed"}'}
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write('{"status": "error"}'.encode("utf-8"))
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write('{"status": "ok"}'.encode("utf-8"))
