@@ -1,7 +1,5 @@
 {
   "name": "screener",
   "version": "1",
-  "engines": {
-    "node": ">=18"
-  }
+  "type": "module"
 }
