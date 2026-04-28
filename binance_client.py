@@ -1,15 +1,11 @@
 """
-OKX USDT Perpetual Swap REST API client.
+Binance USDT-M Futures REST API client.
 
-Drop-in замена Binance/Bybit клиента — те же методы, тот же формат данных.
-OKX не блокирует облачные провайдеры.
-Цены USDT perpetual практически идентичны Binance благодаря арбитражу.
-
-Rate limits OKX (без API-ключа):
-  - /api/v5/market/tickers  →  20 req/2s
-  - /api/v5/market/candles  →  40 req/2s
-
-instId формат OKX: SOL-USDT-SWAP, BTC-USDT-SWAP, ...
+Использует только публичные endpoints — API-ключ не нужен.
+Rate limits Binance Futures:
+  - GET /fapi/v1/ticker/24hr  →  weight 40 (все символы)
+  - GET /fapi/v1/klines        →  weight 5 за запрос
+  - Лимит: 2400 weight/min
 """
 
 import os
@@ -23,64 +19,19 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
-OKX_BASE_URL = "https://www.okx.com"
+FUTURES_BASE_URL = "https://fapi.binance.com"
+
 PROXY = os.getenv("PROXY") or os.getenv("HTTPS_PROXY")
-
-# Маппинг интервалов Binance → OKX
-INTERVAL_MAP = {
-    "1m":  "1m",
-    "3m":  "3m",
-    "5m":  "5m",
-    "15m": "15m",
-    "30m": "30m",
-    "1h":  "1H",
-    "2h":  "2H",
-    "4h":  "4H",
-    "6h":  "6H",
-    "12h": "12H",
-    "1d":  "1D",
-    "1w":  "1W",
-    "1M":  "1M",
-}
-
-# Длительность интервала в миллисекундах (для close_time)
-INTERVAL_MS = {
-    "1m":  60_000,
-    "3m":  180_000,
-    "5m":  300_000,
-    "15m": 900_000,
-    "30m": 1_800_000,
-    "1h":  3_600_000,
-    "2h":  7_200_000,
-    "4h":  14_400_000,
-    "6h":  21_600_000,
-    "12h": 43_200_000,
-    "1d":  86_400_000,
-    "1w":  604_800_000,
-}
-
-
-def _binance_symbol_to_okx(symbol: str) -> str:
-    """SOLUSDT → SOL-USDT-SWAP"""
-    base = symbol[:-4]  # убираем USDT
-    return f"{base}-USDT-SWAP"
-
-
-def _okx_instid_to_binance(inst_id: str) -> str:
-    """SOL-USDT-SWAP → SOLUSDT"""
-    base = inst_id.split("-")[0]
-    return f"{base}USDT"
 
 
 class BinanceClient:
-    """
-    OKX-клиент с интерфейсом Binance.
-    Все методы возвращают данные в формате Binance для полной совместимости.
-    """
-
     def __init__(self):
-        self.base_url = OKX_BASE_URL
+        self.base_url = FUTURES_BASE_URL
+        self._used_weight   = 0
+        self._weight_reset  = time.time() + 60
+        self._max_weight    = 2000  # запас от лимита 2400
 
+        # HTTP-сессия с автоматическим retry
         retry = Retry(
             total=3,
             backoff_factor=0.5,
@@ -91,24 +42,29 @@ class BinanceClient:
         self.session.mount("https://", adapter)
         self.session.headers.update({
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         })
-
-        # Rate limiter: не более 8 запросов в секунду
-        self._last_request_time = 0.0
-        self._min_interval = 0.125  # 125ms между запросами
 
     # ── внутренние методы ──────────────────────────────────────────
 
-    def _get(self, endpoint: str, params: Dict = None) -> Optional[Any]:
-        """HTTP GET с throttle и обработкой ошибок OKX."""
+    def _check_rate_limit(self, weight: int):
+        """Приостанавливает выполнение если приближаемся к лимиту."""
         now = time.time()
-        since_last = now - self._last_request_time
-        if since_last < self._min_interval:
-            time.sleep(self._min_interval - since_last)
-        self._last_request_time = time.time()
+        if now >= self._weight_reset:
+            self._used_weight = 0
+            self._weight_reset = now + 60
 
+        if self._used_weight + weight >= self._max_weight:
+            sleep_secs = self._weight_reset - now + 0.5
+            logger.warning(f"Rate limit: спим {sleep_secs:.1f}с")
+            time.sleep(max(sleep_secs, 1))
+            self._used_weight = 0
+            self._weight_reset = time.time() + 60
+
+    def _get(self, endpoint: str, params: Dict = None, weight: int = 1) -> Optional[Any]:
+        self._check_rate_limit(weight)
         url = f"{self.base_url}{endpoint}"
+
         kwargs = {"params": params, "timeout": 10}
         if PROXY:
             kwargs["proxies"] = {"https": PROXY, "http": PROXY}
@@ -116,23 +72,21 @@ class BinanceClient:
         try:
             resp = self.session.get(url, **kwargs)
 
+            # Futures используют X-MBX-USED-WEIGHT-1M
+            used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
+            if used:
+                self._used_weight = int(used)
+            else:
+                self._used_weight += weight
+
             if resp.status_code == 429:
-                logger.warning("429 Too Many Requests — ждём 5с")
-                time.sleep(5)
+                retry_after = int(resp.headers.get("Retry-After", 30))
+                logger.warning(f"429 Too Many Requests — ждём {retry_after}с")
+                time.sleep(retry_after)
                 return None
 
             resp.raise_for_status()
-            data = resp.json()
-
-            # OKX возвращает {"code": "0", "data": [...]}
-            if data.get("code") != "0":
-                logger.error(
-                    f"OKX error {data.get('code')}: "
-                    f"{data.get('msg')} | {endpoint}"
-                )
-                return None
-
-            return data.get("data")
+            return resp.json()
 
         except requests.exceptions.Timeout:
             logger.error(f"Timeout: {endpoint}")
@@ -149,109 +103,32 @@ class BinanceClient:
 
     def get_all_tickers(self) -> List[Dict]:
         """
-        GET /api/v5/market/tickers?instType=SWAP
-        Возвращает тикеры в формате Binance Futures:
-          symbol, lastPrice, quoteVolume, priceChangePercent, highPrice, lowPrice
+        GET /fapi/v1/ticker/24hr
+        Возвращает 24ч статистику по всем USDT-M Futures парам.
+        Weight: 40
         """
-        data = self._get("/api/v5/market/tickers", params={"instType": "SWAP"})
-        if not data:
-            return []
-
-        tickers = []
-        for item in data:
-            inst_id = item.get("instId", "")
-            # Берём только USDT-SWAP пары
-            if not inst_id.endswith("-USDT-SWAP"):
-                continue
-
-            symbol = _okx_instid_to_binance(inst_id)
-
-            try:
-                last_price = float(item.get("last", 0))
-                open_price = float(item.get("open24h", last_price))  # цена 24ч назад
-                vol_usdt   = float(item.get("volCcy24h", 0))         # оборот в USDT
-
-                # Считаем priceChangePercent вручную (OKX не даёт напрямую)
-                if open_price > 0:
-                    price_change_pct = ((last_price - open_price) / open_price) * 100
-                else:
-                    price_change_pct = 0.0
-
-                tickers.append({
-                    "symbol":             symbol,
-                    "lastPrice":          str(last_price),
-                    "quoteVolume":        str(vol_usdt),
-                    "priceChangePercent": str(round(price_change_pct, 4)),
-                    "highPrice":          item.get("high24h", "0"),
-                    "lowPrice":           item.get("low24h", "0"),
-                    "volume":             item.get("vol24h", "0"),    # base volume
-                    "openPrice":          str(open_price),
-                })
-            except (ValueError, TypeError):
-                continue
-
-        return tickers
+        data = self._get("/fapi/v1/ticker/24hr", weight=40)
+        return data if isinstance(data, list) else []
 
     def get_klines(
         self,
-        symbol:   str,
+        symbol: str,
         interval: str = "1m",
-        limit:    int = 100,
+        limit: int = 100,
     ) -> List[List]:
         """
-        GET /api/v5/market/candles
-        Конвертирует ответ OKX в формат Binance:
-          [open_time, open, high, low, close, base_vol, close_time, quote_vol, ...]
-
-        OKX candle формат: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
-        Важно: OKX возвращает свечи от новых к старым — реверсируем.
+        GET /fapi/v1/klines
+        Формат свечи: [open_time, open, high, low, close, volume,
+                        close_time, quote_volume, trades, ...]
+        Weight: 5
         """
-        inst_id        = _binance_symbol_to_okx(symbol)
-        okx_interval   = INTERVAL_MAP.get(interval, interval)
-        interval_ms    = INTERVAL_MS.get(interval, 60_000)
-
-        data = self._get("/api/v5/market/candles", params={
-            "instId": inst_id,
-            "bar":    okx_interval,
-            "limit":  limit,
-        })
-        if not data:
-            return []
-
-        # OKX: список от новых к старым → разворачиваем
-        raw = list(reversed(data))
-
-        klines = []
-        for row in raw:
-            try:
-                start_ms = int(row[0])
-                # OKX candle: [ts, o, h, l, c, vol(contracts), volCcy(base), volCcyQuote(USDT), confirm]
-                # Для RVOL нужен USDT-объём: row[7]=volCcyQuote, fallback на row[6]
-                quote_vol = row[7] if len(row) > 7 else row[6]
-                klines.append([
-                    start_ms,                    # [0] open_time (ms)
-                    row[1],                      # [1] open
-                    row[2],                      # [2] high
-                    row[3],                      # [3] low
-                    row[4],                      # [4] close
-                    row[5],                      # [5] base volume (contracts)
-                    start_ms + interval_ms - 1,  # [6] close_time (ms)
-                    quote_vol,                   # [7] quote_volume (USDT) ← для RVOL
-                    "0",                         # [8] trades
-                    "0", "0", "0",               # [9-11] ignored
-                ])
-            except (IndexError, ValueError):
-                continue
-
-        return klines
+        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        data = self._get("/fapi/v1/klines", params=params, weight=5)
+        return data if isinstance(data, list) else []
 
     def get_price(self, symbol: str) -> Optional[float]:
-        """GET /api/v5/market/ticker — текущая цена символа."""
-        inst_id = _binance_symbol_to_okx(symbol)
-        data = self._get("/api/v5/market/ticker", params={"instId": inst_id})
-        if data and len(data) > 0:
-            try:
-                return float(data[0]["last"])
-            except (KeyError, ValueError, IndexError):
-                pass
+        """GET /fapi/v1/ticker/price — текущая цена. Weight: 5"""
+        data = self._get("/fapi/v1/ticker/price", params={"symbol": symbol}, weight=5)
+        if data and "price" in data:
+            return float(data["price"])
         return None
