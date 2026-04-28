@@ -1,19 +1,20 @@
 """
 Telegram-бот с кнопкой ручного запуска дневного скрининга.
 
-Запускается автоматически из main.py в фоновом потоке.
-Чтобы кнопка появилась — отправь боту /start.
+При нажатии кнопки — делает POST запрос на serverless эндпоинт.
 """
 
 import logging
-import threading
-import time
+import os
 
 import requests
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logger = logging.getLogger(__name__)
+
+VERCEL_URL = os.getenv("VERCEL_URL") or os.getenv("API_URL")
+VERCEL_TOKEN = os.getenv("VERCEL_TOKEN", "")
 
 # Постоянная клавиатура (прилипает к низу чата)
 REPLY_KEYBOARD = {
@@ -26,10 +27,8 @@ REPLY_KEYBOARD = {
 
 class TelegramBot:
     def __init__(self):
-        self.token  = TELEGRAM_BOT_TOKEN
-        self.api    = f"https://api.telegram.org/bot{self.token}"
-        self.offset = 0
-        self._client = None   # BinanceClient — создаётся лениво
+        self.token = TELEGRAM_BOT_TOKEN
+        self.api  = f"https://api.telegram.org/bot{self.token}"
 
     # ── HTTP ───────────────────────────────────────────────────────
 
@@ -120,61 +119,31 @@ class TelegramBot:
             return
 
         if text == "🔍 Check Inplay":
-            self._run_scan(chat_id)
+            self._call_scan_endpoint(chat_id)
 
-    def _run_scan(self, chat_id: str):
-        from binance_client import BinanceClient
-        from daily_scan import build_message, run_scan
+    def _call_scan_endpoint(self, chat_id: str):
+        if not VERCEL_URL:
+            self._send(chat_id, "⚠️ VERCEL_URL не настроен")
+            return
 
-        if self._client is None:
-            self._client = BinanceClient()
+        headers = {"Content-Type": "application/json"}
+        if VERCEL_TOKEN:
+            headers["Authorization"] = f"Bearer {VERCEL_TOKEN}"
 
-        # Отправляем начальное сообщение и сохраняем его id
-        msg_id = self._send_get_id(chat_id, "🔍 Сканирую рынок на наличие INPLAY...")
-
-        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        state  = {"frame": 0, "current": 0, "total": 0, "running": True}
-
-        def animate():
-            """Крутит спиннер каждую секунду пока идёт скан."""
-            while state["running"]:
-                icon = frames[state["frame"] % len(frames)]
-                state["frame"] += 1
-                if state["total"] > 0:
-                    pct    = int(state["current"] / state["total"] * 100)
-                    filled = int(pct / 10)
-                    bar    = "█" * filled + "░" * (10 - filled)
-                    text   = (
-                        f"{icon} <b>Сканирую рынок на наличие INPLAY...</b>\n"
-                        f"<code>[{bar}] {pct}%</code>\n"
-                        f"{state['current']} / {state['total']} монет"
-                    )
-                else:
-                    text = f"{icon} <b>Сканирую рынок на наличие INPLAY...</b>"
-                self._edit(chat_id, msg_id, text)
-                time.sleep(1)
-
-        anim = threading.Thread(target=animate, daemon=True)
-        anim.start()
-
-        def progress(current: int, total: int):
-            state["current"] = current
-            state["total"]   = total
-
+        msg_id = self._send_get_id(chat_id, "🔍 Запрашиваю INPLAY...")
         try:
-            top = run_scan(self._client, progress_callback=progress)
-            state["running"] = False
-            anim.join(timeout=2)
-            message = build_message(top)
-            if msg_id:
-                self._edit(chat_id, msg_id, message)
+            r = requests.post(
+                VERCEL_URL,
+                headers=headers,
+                timeout=65,
+            )
+            if r.status_code == 200:
+                self._edit(chat_id, msg_id, "✅ Ответ получен!")
             else:
-                self._send(chat_id, message)
-
+                self._edit(chat_id, msg_id, f"⚠️ Ошибка: {r.status_code}")
         except Exception as e:
-            logger.error(f"Scan error: {e}", exc_info=True)
-            state["running"] = False
-            self._edit(chat_id, msg_id, f"⚠️ Ошибка скана: {e}")
+            logger.error(f"Scan request error: {e}")
+            self._edit(chat_id, msg_id, f"⚠️ Ошибка запроса: {e}")
 
     # ── Polling loop ───────────────────────────────────────────────
 
@@ -192,16 +161,12 @@ class TelegramBot:
                 time.sleep(1)
 
     def start(self):
-        """Запускает polling в фоновом daemon-потоке и сразу шлёт клавиатуру."""
-        # Отправляем приветствие с клавиатурой при запуске
+        """Проверяет что бот работает и отправляет приветствие."""
         self._send(
             TELEGRAM_CHAT_ID,
-            "👋 <b>Inplay Screener запущен</b>\n\n"
+            "👋 <b>Inplay Screener активен</b>\n\n"
             "Нажми <b>🔍 Check Inplay</b> чтобы увидеть какие монеты "
-            "сейчас активны на рынке.\n\n"
-            "Если появится новый inplay — пришлю оповещение автоматически.",
+            "сейчас активны на рынке.",
             reply_markup=REPLY_KEYBOARD,
         )
-        t = threading.Thread(target=self._poll, daemon=True, name="tg-bot")
-        t.start()
         logger.info("Telegram bot started")

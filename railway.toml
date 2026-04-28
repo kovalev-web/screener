@@ -1,3 +1,4 @@
-[deploy]
-startCommand = "python main.py"
-restartPolicyType = "always"
+# Railway deployment disabled — using Vercel instead
+# [deploy]
+# startCommand = "python main.py"
+# restartPolicyType = "always"
