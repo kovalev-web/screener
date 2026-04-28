@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "scan.py": {
+      "runtime": "@vercel/python"
+    }
+  },
   "routes": [
     { "src": "/api/scan", "dest": "/scan.py" }
   ]
