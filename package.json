@@ -1,4 +1,7 @@
 {
   "name": "screener",
-  "version": "1"
+  "version": "1",
+  "engines": {
+    "node": ">=18"
+  }
 }
