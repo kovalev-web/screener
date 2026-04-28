@@ -11,7 +11,10 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(b'{"status":"ok","step":"3"}')
+        self.wfile.write(b'{"status":"ok","step":"4"}')
 
     def do_POST(self):
-        self.do_GET()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok","step":"4"}')
