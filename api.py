@@ -1,14 +1,2 @@
-"""
-Vercel serverless API.
-"""
-
-from http.server import BaseHTTPRequestHandler
-
-
-class handler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write('{"status": "ok"}'.encode("utf-8"))
+def handler(req, context):
+    return new Response('{"status": "ok"}', status=200, headers={"Content-Type": "application/json"})
