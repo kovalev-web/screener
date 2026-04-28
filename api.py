@@ -1,20 +1,2 @@
-"""
-INPLAY Scan API.
-"""
-
-from http.server import BaseHTTPRequestHandler
-
-
-class handler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"status":"ok","step":"4"}')
-
-    def do_POST(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"status":"ok","step":"4"}')
+def handler(req, context):
+    return new Response('{"status":"ok","step":"5"}', status=200, headers={"Content-Type": "application/json"})
