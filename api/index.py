@@ -8,15 +8,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from daily_scan import build_message, run_scan
-from binance_client import BinanceClient
-from telegram_notifier import TelegramNotifier
-
 
 class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            from daily_scan import build_message, run_scan
+            from binance_client import BinanceClient
+            from telegram_notifier import TelegramNotifier
+
             client = BinanceClient()
             top = run_scan(client)
             message = build_message(top)
