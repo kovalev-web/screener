@@ -1,5 +1,5 @@
 {
   "name": "screener",
   "version": "1",
-  "type": "commonjs"
+  "type": "module"
 }
