@@ -12,6 +12,7 @@ Rate limits OKX (без API-ключа):
 instId формат OKX: SOL-USDT-SWAP, BTC-USDT-SWAP, ...
 """
 
+import os
 import time
 import logging
 from typing import Optional, List, Dict, Any
@@ -23,6 +24,7 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 OKX_BASE_URL = "https://www.okx.com"
+PROXY = os.getenv("PROXY") or os.getenv("HTTPS_PROXY")
 
 # Маппинг интервалов Binance → OKX
 INTERVAL_MAP = {
@@ -107,8 +109,12 @@ class BinanceClient:
         self._last_request_time = time.time()
 
         url = f"{self.base_url}{endpoint}"
+        kwargs = {"params": params, "timeout": 10}
+        if PROXY:
+            kwargs["proxies"] = {"https": PROXY, "http": PROXY}
+
         try:
-            resp = self.session.get(url, params=params, timeout=10)
+            resp = self.session.get(url, **kwargs)
 
             if resp.status_code == 429:
                 logger.warning("429 Too Many Requests — ждём 5с")
