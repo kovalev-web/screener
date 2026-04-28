@@ -1,5 +1,0 @@
-{
-  "routes": [
-    { "src": "/api/scan", "dest": "/api/scan.py" }
-  ]
-}

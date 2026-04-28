@@ -2,7 +2,6 @@
 Vercel serverless API — endpoint для ручного запуска INPLAY-скана.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -13,8 +12,8 @@ from binance_client import BinanceClient
 from telegram_notifier import TelegramNotifier
 
 
-def handler(request):
-    if request.method == "POST":
+def handler(req, context):
+    if req.method == "POST":
         try:
             client = BinanceClient()
             top = run_scan(client)
@@ -25,6 +24,6 @@ def handler(request):
 
             return {"statusCode": 200, "body": '{"status": "ok"}'}
         except Exception as e:
-            return {"statusCode": 500, "body": f'{{"status": "error", "error": "{e}"}}'}
+            return {"statusCode": 500, "body": '{"status": "error"}'}
     else:
         return {"statusCode": 405, "body": '{"status": "method not allowed"}'}
