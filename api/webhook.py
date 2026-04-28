@@ -1,5 +1,5 @@
 """
-Telegram Webhook Handler — Vercel serverless function.
+Telegram Webhook Handler.
 """
 
 import os
@@ -10,23 +10,17 @@ from http.server import BaseHTTPRequestHandler
 
 logger = logging.getLogger(__name__)
 
-TELEGRAM_API = "https://api.telegram.org"
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-VERCEL_URL = os.getenv("VERCEL_URL", "https://screener-l716.vercel.app/api/scan")
+VERCEL_URL = os.getenv("VERCEL_URL", "https://screener-l716-47fwqtk4z-kovalev-webs-projects.vercel.app/api/scan")
 
 
 class handler(BaseHTTPRequestHandler):
 
     def _send_reply(self, chat_id: str, text: str):
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-        }
         try:
             r = requests.post(
-                f"{TELEGRAM_API}/bot{BOT_TOKEN}/sendMessage",
-                json=payload,
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
                 timeout=10,
             )
             return r.json().get("ok", False)
@@ -34,14 +28,18 @@ class handler(BaseHTTPRequestHandler):
             logger.error(f"Send error: {e}")
             return False
 
-    def _call_scan(self, chat_id: str):
+    def _call_scan(self):
         try:
-            r = requests.post(VERCEL_URL, timeout=55)
-            if r.status_code == 200:
-                return "✅ Скан выполнен!"
-            return f"⚠️ Ошибка: {r.status_code}"
+            r = requests.get(VERCEL_URL, timeout=55)
+            return f"Скан выполнен! ({r.status_code})"
         except Exception as e:
             return f"⚠️ Ошибка: {e}"
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
 
     def do_POST(self):
         try:
@@ -60,14 +58,11 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             if text == "/start":
-                reply = "👋 <b>Inplay Screener</b>\n\nНажми /scan для проверки монет."
-                self._send_reply(chat_id, reply)
+                self._send_reply(chat_id, "👋 <b>Inplay Screener</b>\n\nНажми /scan.")
             elif text == "/scan":
                 self._send_reply(chat_id, "🔍 Сканирую...")
-                result = self._call_scan(chat_id)
+                result = self._call_scan()
                 self._send_reply(chat_id, result)
-            else:
-                self._send_reply(chat_id, "Используй /scan для проверки inplay монет.")
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -77,9 +72,3 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b'{"error":true}')
-
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"status":"ok"}')
