@@ -1,10 +1,7 @@
 {
   "functions": {
     "scan.py": {
-      "runtime": "@vercel/python"
+      "runtime": "@vercel/python@4.3.1"
     }
-  },
-  "routes": [
-    { "src": "/api/scan", "dest": "/scan.py" }
-  ]
+  }
 }
