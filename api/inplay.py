@@ -1,2 +1,2 @@
-def handler(req, context):
-    return new Response('{"status":"ok","v":3}', status=200, headers={"Content-Type": "application/json"})
+async def handler(req, context):
+    return Response('{"status":"ok","v":4}', status=200, headers={"Content-Type": "application/json"})
